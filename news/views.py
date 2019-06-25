@@ -1,16 +1,37 @@
 from django.shortcuts import render,redirect
-from django.http import HttpResponse, Http404
+from django.http import HttpResponse, Http404, HttpResponseRedirect
 import datetime as dt
-from .models import Article
+from .models import Article, NewsLetterRecipients
+from .forms import NewArticleForm, NewsLetterForm
+from .email import send_welcome_email
+from django.contrib.auth.decorators import login_required
+from django.http import JsonResponse
 
 # Create your views here.
 def welcome(request):
     return render(request, 'welcome.html')
 
 def news_of_day(request):
+    if request.method == 'POST':
+        form = NewsLetterForm(request.POST)
+        if form.is_valid():
+            name = form.cleaned_data['your_name']
+            email = form.cleaned_data['email']
+            recipient = NewsLetterRecipients(name = name,email =email)
+            recipient.save()
+            send_welcome_email(name,email)
+            HttpResponseRedirect('news_of_day')
+
     date = dt.date.today()
     news = Article.todays_news()
-    return render(request, 'all-news/today-news.html',{"date": date,"news":news})
+    if request.method == 'POST':
+        form = NewsLetterForm(request.POST)
+        if form.is_valid():
+            print('valid')
+    else:
+        form = NewsLetterForm()
+    return render(request, 'all-news/today-news.html', {"date": date,"news":news,"letterForm":form})
+
 
 
 
@@ -52,5 +73,33 @@ def article(request,article_id):
     except DoesNotExist:
         raise Http404()
 
+def newsletter(request):
+    name = request.POST.get('your_name')
+    email = request.POST.get('email')
+
+    recipient = NewsLetterRecipients(name=name, eamil=email)
+    recipient.save()
+    send_welcome_email(name, email)
+    data = {'success': 'You have been successfully added to a mailing list'}
+    return JsonResponse(data)
+
+@login_required(login_url='/accounts/login/')
+def article(request, article_id):
+
     return render(request,"all-news/article.html",{"article":article})
+
+def new_article(request):
+    current_user = request.user
+    if request.method == 'POST':
+        form = NewArticleForm(request.POST, request.FILES)
+        if form.is_valid():
+            article = form.save(commit=False)
+            article.editor = current_user
+            article.save()
+        return redirect('newsToday')
+
+    else:
+        form = NewArticleForm()
+    return render(request, 'new_article.html', {"form": form})
+
     
